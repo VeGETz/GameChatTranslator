@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write  # needed to create the GitHub Release
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore ScreenTranslator.sln
+
+      - name: Publish (self-contained single-file exe, win-x64)
+        run: >
+          dotnet publish src/ScreenTranslator
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -o publish
+
+      - name: Verify artifact
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path publish -Filter *.exe | ForEach-Object {
+            "{0}  {1:N0} bytes" -f $_.Name, $_.Length
+          }
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $notesFile = "$env:RUNNER_TEMP\release-notes.md"
+          @"
+          ## GameChatTranslator $tag
+
+          Windows overlay that OCRs your game's chat box and translates it on the fly.
+
+          > **Built entirely by [Claude Code](https://claude.com/claude-code).** Does not touch the game process — only reads pixels from your desktop via GDI ``BitBlt``, then runs them through Windows OCR + a translation API. Use at your own risk. See the [README](https://github.com/${{ github.repository }}/blob/main/README.md) for the full disclaimer.
+
+          ### Install
+
+          1. Download ``ScreenTranslator.exe`` below.
+          2. Double-click — no installer, no runtime needed.
+          3. Install the Windows OCR language pack for the language you want to read (one-time, PowerShell as Admin). Example:
+             ``````powershell
+             Add-WindowsCapability -Online -Name "Language.OCR~~~th-TH~0.0.1.0"
+             ``````
+
+          ### Requirements
+
+          - Windows 10/11 x64
+          - At least one Windows OCR language installed
+          "@ | Set-Content -Path $notesFile -Encoding utf8
+
+          gh release create $tag `
+            "publish/ScreenTranslator.exe" `
+            --title "$tag" `
+            --notes-file $notesFile `
+            --repo "${{ github.repository }}"
