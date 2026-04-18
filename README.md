@@ -1,9 +1,9 @@
 # GameChatTranslator
 
-A Windows desktop overlay that reads foreign-language chat from your game via screen OCR and translates it on the fly. Drag a bounding box over the in-game chat area, lock it, and a small panel below the box shows the translated messages.
+A Windows desktop overlay that reads foreign-language chat from your game via screen OCR and translates it on the fly. Drag a bounding box over the in-game chat area, lock it, and a small panel below the box shows the translated messages — one line per message, newest at the bottom.
 
 > **This project was built entirely by [Claude Code](https://claude.com/claude-code) (Anthropic).**
-> The entire codebase — architecture, WPF UI, OCR/translation pipeline, settings, packaging — was generated, debugged, and iterated on through a conversational session with Claude. No human-authored code is in this repo.
+> The entire codebase — architecture, WPF UI, OCR/translation pipeline, settings, packaging, CI — was generated, debugged, and iterated on through a conversational session with Claude. No human-authored code is in this repo.
 
 ---
 
@@ -18,10 +18,17 @@ A Windows desktop overlay that reads foreign-language chat from your game via sc
 ## Features
 
 - **Resizable, always-on-top overlay** you drag over the game's chat box. Lock it to make the capture region click-through so it doesn't block the game.
-- **Windows OCR** (built-in, per-language). No Tesseract, no model downloads. Add languages with a single `Add-WindowsCapability` PowerShell command — no keyboard layout added, no display language changed.
-- **Translators**:
-  - Google Translate (free, unofficial endpoint — no API key, may be rate-limited)
-  - Google Cloud Translation v2 (official, API key, 500k chars/mo free tier)
+- **Windows OCR** (built-in, per-language). No Tesseract, no model downloads.
+  - **In-app language installer**: pick a language (Thai, Japanese, Korean, Chinese, Russian, etc.) → click Install → the app launches an elevated PowerShell that runs `Add-WindowsCapability` for you. UAC handled, status displayed, auto-refresh when done. No keyboard layout added, no display language changed, no reboot.
+- **Translators** — dropdown picker with dynamic UI (only the selected translator's settings are shown):
+  - **Google Translate** (free, unofficial endpoint — no API key, may be rate-limited)
+  - **Google Cloud Translation v2** (official, API key, 500k chars/mo free tier)
+  - **LLM** — unified OpenAI-shape client covering four provider modes:
+    - **OpenAI-compatible Chat Completions** — OpenAI, Ollama, LM Studio, OpenRouter, Groq, Together.ai, xAI, Mistral, LocalAI, vLLM, and anything else that speaks OpenAI's `/chat/completions`.
+    - **OpenAI Responses** — OpenAI's newer `/v1/responses` endpoint.
+    - **Azure Chat Completions** (legacy) — `{resource}.openai.azure.com/openai/deployments/{name}/chat/completions` with `api-key` header.
+    - **Azure Responses** (modern, required for GPT-5 family) — `{resource}.cognitiveservices.azure.com/openai/responses` with `Authorization: Bearer`.
+  - **Quick presets** for common providers (OpenAI, OpenAI Responses, Azure Responses, Azure legacy, Ollama, LM Studio, OpenRouter, Groq) — one click fills in base URL and model.
   - API keys are DPAPI-encrypted on disk (Windows CurrentUser scope).
 - **Low latency**:
   - Per-frame pixel hashing (xxHash64) — unchanged frames skip OCR and translation entirely.
@@ -29,7 +36,7 @@ A Windows desktop overlay that reads foreign-language chat from your game via sc
   - LRU translation cache — repeated phrases (common in chat) cost zero API calls.
 - **Sticky messages**: fast-scrolling chat stays readable. Each parsed line lingers on the overlay for a configurable TTL (default 3s) after it stops appearing in the capture region.
 - **Per-player-line parsing**: a configurable regex pulls `name` and `text` groups out of each OCR line. Only `text` is translated; `[PlayerName]:` is preserved verbatim.
-- **Line filter**: optionally drop any OCR line that doesn't match the regex — useful for hiding voice-line captions, hero-change notifications, killfeed, etc. that share the chat area.
+- **Blocked-phrase filter**: a list of case-insensitive substrings; any OCR line containing one is dropped before translation. OCR-error tolerant (unlike a strict regex filter), perfect for hiding voice-line captions, hero-change notifications, killfeed, or "joined channel" spam.
 - **Global hotkey** to toggle translation on/off without alt-tabbing.
 
 ---
@@ -38,7 +45,7 @@ A Windows desktop overlay that reads foreign-language chat from your game via sc
 
 - **Windows 10/11 x64**.
 - **.NET 10 Desktop Runtime** (only if you use the framework-dependent build; the self-contained release exe includes everything).
-- **At least one Windows OCR language** installed for the language you want to read. See below.
+- **At least one Windows OCR language** installed for the language you want to read. The app's built-in installer can set this up for you with one click.
 
 ## Download
 
@@ -50,23 +57,31 @@ Download `ScreenTranslator.exe`, put it anywhere, double-click. Settings are sto
 
 ## Installing Windows OCR languages
 
-Run PowerShell **as Administrator**. This adds the OCR capability **only** — no keyboard layout, no display language change, no reboot required.
+### Option A — from inside the app (recommended)
+
+1. Click **Add OCR language...** next to the OCR source language dropdown.
+2. Pick a language (rows show "Installed" or "Not installed").
+3. Click **Install selected**. A UAC prompt appears → approve.
+4. An elevated PowerShell window opens, runs `Add-WindowsCapability`, shows progress, then asks you to press Enter to close.
+5. The dialog auto-refreshes and the selected language now shows "Installed" in green.
+
+No keyboard layout is added, no display language is changed, no reboot is required.
+
+### Option B — manual PowerShell (if you prefer)
+
+Run PowerShell **as Administrator**:
 
 ```powershell
 # Thai
 Add-WindowsCapability -Online -Name "Language.OCR~~~th-TH~0.0.1.0"
 
-# Japanese
+# Japanese / Korean / Chinese (Simplified / Traditional)
 Add-WindowsCapability -Online -Name "Language.OCR~~~ja-JP~0.0.1.0"
-
-# Korean
 Add-WindowsCapability -Online -Name "Language.OCR~~~ko-KR~0.0.1.0"
-
-# Chinese (Simplified / Traditional)
 Add-WindowsCapability -Online -Name "Language.OCR~~~zh-CN~0.0.1.0"
 Add-WindowsCapability -Online -Name "Language.OCR~~~zh-TW~0.0.1.0"
 
-# Russian
+# Russian / Vietnamese / Spanish / French / German / Italian / etc.
 Add-WindowsCapability -Online -Name "Language.OCR~~~ru-RU~0.0.1.0"
 ```
 
@@ -89,19 +104,19 @@ After installing, click **Refresh** next to the OCR language dropdown in the app
 1. Launch the app. Two windows appear: the **Control Panel** and a small transparent **Overlay** with a red dashed border.
 2. Drag the overlay over your game's chat area. Drag the bottom-right red handle to resize. Drag the bottom edge of the capture region to change the split between capture area and translation panel.
 3. In the Control Panel:
-   - Pick the **OCR source language** (e.g. `th-TH` for Thai, `ja-JP` for Japanese).
+   - Pick the **OCR source language** (e.g. `th-TH` for Thai, `ja-JP` for Japanese). If it's not listed, click **Add OCR language...** and install it.
    - Set the **Target language** (e.g. `en`).
-   - Pick a **Translator** (Google free works out of the box).
+   - Pick a **Translator** (Google free works out of the box; for LLM, click a preset button then fill in your API key).
    - Tune **Interval (ms)** — lower = more responsive, higher = less CPU / fewer API calls.
 4. Check **Enabled**, then **Lock overlay (click-through)**. The capture region becomes transparent to mouse clicks so the game isn't blocked.
-5. Translated messages appear in the bottom panel, newest at the bottom, each on its own line.
+5. Translated messages appear in the bottom panel, newest at the bottom, each on its own line. They linger for a few seconds after scrolling out so you have time to read them.
 6. Press the global **Hotkey** (default `Ctrl+Alt+T`) to toggle translation on/off without alt-tabbing.
 
 ### Chat parsing (Overwatch, League, etc.)
 
 - **Chat line regex** (default): `^\[(?<name>[^\]]+)\]\s*:\s*(?<text>.*)$` — matches `[PlayerName]: message`.
-- **Skip player names** (on by default): only `text` is translated; `[Name]:` is preserved.
-- **Only translate lines matching the regex** (off by default): drop everything that doesn't look like a chat message. Recommended for Overwatch to filter out voice-line captions, hero changes, killfeed, etc.
+- **Skip player names** (on by default): only the `text` group is translated; `[Name]:` is preserved.
+- **Do not translate when line contains**: a newline-separated list of substrings. Any OCR line containing one (case-insensitive) is dropped. Ideal for filtering voice lines, hero changes, and killfeed that share the chat area with real chat.
 
 Common regex variants:
 ```
@@ -117,6 +132,27 @@ Common regex variants:
 # <PlayerName> text
 ^<(?<name>[^>]+)>\s*(?<text>.*)$
 ```
+
+### LLM translator cheat sheet
+
+The LLM mode covers essentially every OpenAI-shape endpoint in existence. Pick a preset, then override the model if you want something else.
+
+| Provider | Preset | Base URL | Model field |
+|---|---|---|---|
+| OpenAI | `OpenAI` | `https://api.openai.com/v1` | `gpt-4o-mini`, `gpt-4o`, etc. |
+| OpenAI (Responses API) | `OpenAI (Responses)` | `https://api.openai.com/v1` | same |
+| Azure OpenAI (modern, GPT-5) | `Azure (Responses)` | `https://{resource}.cognitiveservices.azure.com` | deployment name |
+| Azure OpenAI (legacy) | `Azure (legacy)` | `https://{resource}.openai.azure.com` | deployment name |
+| Ollama (local) | `Ollama` | `http://localhost:11434/v1` | `llama3.2`, `qwen2.5`, etc. |
+| LM Studio (local) | `LM Studio` | `http://localhost:1234/v1` | whatever you loaded |
+| OpenRouter | `OpenRouter` | `https://openrouter.ai/api/v1` | `anthropic/claude-3.5-sonnet`, etc. |
+| Groq | `Groq` | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile`, etc. |
+
+Anthropic's native Messages API isn't OpenAI-shape, so it's not directly supported. Use OpenRouter with `anthropic/claude-*` models to route Claude through the LLM translator.
+
+For local models (Ollama / LM Studio) the API key can be left blank.
+
+The default system prompt is tuned for live gaming chat — preserves proper nouns, hero/item names, outputs only the translation with no prose. You can edit it freely; use `{source}` and `{target}` placeholders for the language pair.
 
 ---
 
@@ -135,8 +171,17 @@ dotnet run --project src/ScreenTranslator
 dotnet publish src/ScreenTranslator -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
 ```
 
-Output at:
+Output:
 `src/ScreenTranslator/bin/Release/net10.0-windows10.0.19041.0/win-x64/publish/ScreenTranslator.exe`
+
+### Automated releases
+
+Pushing a tag that matches `v*.*.*` triggers the GitHub Actions release workflow (`.github/workflows/release.yml`) which publishes a single-file exe and creates a GitHub Release with the asset attached:
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
 
 ---
 
@@ -148,6 +193,8 @@ Output at:
 - **`CommunityToolkit.Mvvm`** for MVVM, **`Microsoft.Extensions.DependencyInjection`** for wiring
 - **`RegisterHotKey`** / `WM_HOTKEY` for global hotkeys
 - **`xxHash64`** (System.IO.Hashing) for fast frame-change detection
+- Elevated child processes via `Verb = "runas"` for in-app OCR language installation
+- GitHub Actions (`windows-latest` runner) for tagged-release automation
 
 ---
 
