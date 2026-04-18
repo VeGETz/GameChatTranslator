@@ -43,6 +43,7 @@ public partial class App : Application
 
         services.AddSingleton<GoogleFreeTranslator>();
         services.AddSingleton<GoogleCloudTranslator>();
+        services.AddSingleton<LlmTranslator>();
         services.AddSingleton<TranslatorFactory>();
 
         services.AddSingleton<Win32HotkeyService>();

@@ -62,11 +62,26 @@ public sealed class SettingsStore
         _current.GoogleCloudApiKeyProtected = Convert.ToBase64String(protectedBytes);
     }
 
-    public string? GetGoogleCloudApiKey()
+    public string? GetGoogleCloudApiKey() => Unprotect(_current.GoogleCloudApiKeyProtected);
+
+    public void SetLlmApiKey(string? plaintext)
     {
-        var protectedBase64 = _current.GoogleCloudApiKeyProtected;
-        if (string.IsNullOrEmpty(protectedBase64))
-            return null;
+        _current.LlmApiKeyProtected = Protect(plaintext);
+    }
+
+    public string? GetLlmApiKey() => Unprotect(_current.LlmApiKeyProtected);
+
+    private static string? Protect(string? plaintext)
+    {
+        if (string.IsNullOrEmpty(plaintext)) return null;
+        var bytes = Encoding.UTF8.GetBytes(plaintext);
+        var protectedBytes = ProtectedData.Protect(bytes, optionalEntropy: null, DataProtectionScope.CurrentUser);
+        return Convert.ToBase64String(protectedBytes);
+    }
+
+    private static string? Unprotect(string? protectedBase64)
+    {
+        if (string.IsNullOrEmpty(protectedBase64)) return null;
         try
         {
             var protectedBytes = Convert.FromBase64String(protectedBase64);

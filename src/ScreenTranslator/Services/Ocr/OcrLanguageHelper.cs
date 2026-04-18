@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using Windows.Globalization;
 using Windows.Media.Ocr;
 
 namespace ScreenTranslator.Services.Ocr;
@@ -17,6 +18,41 @@ public static class OcrLanguageHelper
             list.Add(new OcrLanguage(lang.LanguageTag, $"{lang.NativeName} ({lang.LanguageTag})"));
         }
         return list;
+    }
+
+    /// <summary>
+    /// Authoritative check: can the OCR engine actually handle this tag right now?
+    /// Handles the case where AvailableRecognizerLanguages returns a short tag like "ko"
+    /// while the caller asks about "ko-KR" (or vice versa). Also checks primary subtag
+    /// (language part before "-") as a fallback.
+    /// </summary>
+    public static bool IsOcrAvailable(string bcp47Tag)
+    {
+        if (string.IsNullOrWhiteSpace(bcp47Tag)) return false;
+
+        // Direct attempt: if TryCreateFromLanguage succeeds, we can OCR this tag.
+        try
+        {
+            var language = new Language(bcp47Tag);
+            if (OcrEngine.TryCreateFromLanguage(language) is not null) return true;
+        }
+        catch { /* invalid tag string — fall through */ }
+
+        // Fallback: match on primary subtag against the available recognizer list
+        // (e.g. "ko-KR" requested, only "ko" is reported — treat as installed).
+        var primary = PrimarySubtag(bcp47Tag);
+        foreach (var avail in OcrEngine.AvailableRecognizerLanguages)
+        {
+            if (string.Equals(PrimarySubtag(avail.LanguageTag), primary, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    private static string PrimarySubtag(string tag)
+    {
+        var idx = tag.IndexOf('-');
+        return idx > 0 ? tag.Substring(0, idx) : tag;
     }
 
     /// <summary>

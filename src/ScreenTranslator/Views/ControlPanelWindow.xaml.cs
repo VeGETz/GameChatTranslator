@@ -1,10 +1,8 @@
 using System.Runtime.Versioning;
-using System.Text;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using ScreenTranslator.Services.Hotkey;
-using ScreenTranslator.Services.Ocr;
 using ScreenTranslator.Services.Settings;
 using ScreenTranslator.ViewModels;
 
@@ -52,18 +50,10 @@ public partial class ControlPanelWindow : Window
 
     private void AddOcrLanguage_OnClick(object sender, RoutedEventArgs e)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("To add an OCR language, open PowerShell as Administrator and run one of:");
-        sb.AppendLine();
-        foreach (var (display, tag, cap) in OcrLanguageHelper.CommonOcrLanguages)
-        {
-            sb.AppendLine($"# {display} ({tag})");
-            sb.AppendLine(OcrLanguageHelper.BuildInstallCommand(cap));
-            sb.AppendLine();
-        }
-        sb.AppendLine("After installing, click the Refresh button next to the OCR language dropdown.");
-        sb.AppendLine("No reboot or app restart needed — installing via Add-WindowsCapability does not add a keyboard layout or change your display language.");
+        var dialog = new AddOcrLanguageDialog { Owner = this };
+        dialog.ShowDialog();
 
-        MessageBox.Show(this, sb.ToString(), "Add OCR language", MessageBoxButton.OK, MessageBoxImage.Information);
+        // After the dialog closes, re-enumerate installed OCR languages so the main dropdown shows any new ones.
+        _vm.RefreshOcrLanguagesCommand.Execute(null);
     }
 }

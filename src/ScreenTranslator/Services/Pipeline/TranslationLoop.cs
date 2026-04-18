@@ -149,30 +149,26 @@ public sealed class TranslationLoop : IDisposable
         var parsed = new List<ChatEntry>(lines.Count);
         foreach (var line in lines)
         {
+            // Blocked-phrase filter: drop the whole OCR line if it contains any configured phrase.
+            // Case-insensitive Contains, so "you were eliminated by" catches variants like
+            // "YOU WERE ELIMINATED BY Tracer" regardless of surrounding text.
+            if (ContainsAnyBlockedPhrase(line, settings.BlockedPhrases))
+                continue;
+
             string? name = null;
             string payload = line;
-            bool matched = false;
 
-            if (regex is not null)
+            if (regex is not null && settings.SkipPlayerNames)
             {
                 var m = regex.Match(line);
                 if (m.Success)
                 {
-                    matched = true;
-                    if (settings.SkipPlayerNames)
-                    {
-                        var nameGroup = m.Groups["name"];
-                        var textGroup = m.Groups["text"];
-                        if (nameGroup.Success) name = nameGroup.Value.Trim();
-                        if (textGroup.Success) payload = textGroup.Value.Trim();
-                    }
+                    var nameGroup = m.Groups["name"];
+                    var textGroup = m.Groups["text"];
+                    if (nameGroup.Success) name = nameGroup.Value.Trim();
+                    if (textGroup.Success) payload = textGroup.Value.Trim();
                 }
             }
-
-            // Line-filter mode: drop anything that didn't match the regex.
-            // If the pattern was invalid or empty, GetRegex returns null and we treat every line as a match.
-            if (settings.OnlyTranslateMatchingLines && regex is not null && !matched)
-                continue;
 
             if (string.IsNullOrWhiteSpace(payload))
                 continue;
@@ -251,6 +247,18 @@ public sealed class TranslationLoop : IDisposable
             _cachedPattern = pattern; // don't retry the broken pattern every tick
             return null;
         }
+    }
+
+    private static bool ContainsAnyBlockedPhrase(string line, IReadOnlyList<string> phrases)
+    {
+        if (phrases is null || phrases.Count == 0) return false;
+        foreach (var phrase in phrases)
+        {
+            if (string.IsNullOrWhiteSpace(phrase)) continue;
+            if (line.Contains(phrase, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
     }
 
     private static string TwoLetter(string bcp47)

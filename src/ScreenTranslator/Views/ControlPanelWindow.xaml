@@ -1,12 +1,15 @@
 <Window x:Class="ScreenTranslator.Views.ControlPanelWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         Title="ScreenTranslator"
-        Width="480"
-        Height="800"
-        ResizeMode="CanMinimize"
+        Width="520"
+        Height="760"
+        ResizeMode="CanResize"
+        MinHeight="400"
         Background="#FF1E1E1E">
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <!-- Keyed label style; applied explicitly so it doesn't bleed into ComboBoxItem / ListBoxItem TextBlocks. -->
         <Style x:Key="Label" TargetType="TextBlock">
             <Setter Property="Foreground" Value="White" />
@@ -78,11 +81,67 @@
             <ComboBox ItemsSource="{Binding AvailableTranslators}"
                       SelectedItem="{Binding Translator}" />
 
-            <TextBlock Text="Google Cloud API key (only used if translator = GoogleCloud)" Style="{StaticResource Label}" />
-            <TextBox Text="{Binding GoogleCloudApiKey, UpdateSourceTrigger=PropertyChanged}" />
-            <Button Content="Test Google Cloud translator"
-                    Command="{Binding TestTranslatorCommand}"
-                    HorizontalAlignment="Left" />
+            <!-- Google Cloud: shown only when translator = GoogleCloud -->
+            <StackPanel Visibility="{Binding IsGoogleCloudSelected, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="Google Cloud API key" Style="{StaticResource Label}" />
+                <TextBox Text="{Binding GoogleCloudApiKey, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Content="Test Google Cloud translator"
+                        Command="{Binding TestTranslatorCommand}"
+                        HorizontalAlignment="Left" />
+            </StackPanel>
+
+            <!-- LLM: shown only when translator = Llm -->
+            <StackPanel Visibility="{Binding IsLlmSelected, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="LLM settings" Style="{StaticResource SubHeader}" Margin="0,8,0,0" />
+
+                <TextBlock Text="Quick presets" Style="{StaticResource Label}" />
+                <WrapPanel>
+                    <Button Content="OpenAI"            Command="{Binding ApplyLlmPresetCommand}" CommandParameter="openai"           Margin="0,0,6,6" />
+                    <Button Content="OpenAI (Responses)" Command="{Binding ApplyLlmPresetCommand}" CommandParameter="openai-responses" Margin="0,0,6,6" />
+                    <Button Content="Azure (Responses)" Command="{Binding ApplyLlmPresetCommand}" CommandParameter="azure"            Margin="0,0,6,6" />
+                    <Button Content="Azure (legacy)"    Command="{Binding ApplyLlmPresetCommand}" CommandParameter="azure-legacy"     Margin="0,0,6,6" />
+                    <Button Content="Ollama"            Command="{Binding ApplyLlmPresetCommand}" CommandParameter="ollama"           Margin="0,0,6,6" />
+                    <Button Content="LM Studio"         Command="{Binding ApplyLlmPresetCommand}" CommandParameter="lmstudio"         Margin="0,0,6,6" />
+                    <Button Content="OpenRouter"        Command="{Binding ApplyLlmPresetCommand}" CommandParameter="openrouter"      Margin="0,0,6,6" />
+                    <Button Content="Groq"              Command="{Binding ApplyLlmPresetCommand}" CommandParameter="groq"            Margin="0,0,6,6" />
+                </WrapPanel>
+
+                <TextBlock Text="Provider type" Style="{StaticResource Label}" />
+                <ComboBox ItemsSource="{Binding AvailableLlmProviders}"
+                          SelectedItem="{Binding LlmProvider}" />
+
+                <TextBlock Text="Base URL" Style="{StaticResource Label}" />
+                <TextBox Text="{Binding LlmBaseUrl, UpdateSourceTrigger=PropertyChanged}"
+                         FontFamily="Consolas" />
+
+                <TextBlock Text="Model (OpenAI model id; for Azure the deployment name)" Style="{StaticResource Label}" />
+                <TextBox Text="{Binding LlmModel, UpdateSourceTrigger=PropertyChanged}"
+                         FontFamily="Consolas" />
+
+                <TextBlock Text="API key (leave blank for local Ollama / LM Studio)" Style="{StaticResource Label}" />
+                <TextBox Text="{Binding LlmApiKey, UpdateSourceTrigger=PropertyChanged}" />
+
+                <!-- Azure API version: shown only for Azure provider -->
+                <StackPanel Visibility="{Binding IsAzureLlmSelected, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="Azure API version" Style="{StaticResource Label}" />
+                    <TextBox Text="{Binding LlmAzureApiVersion, UpdateSourceTrigger=PropertyChanged}"
+                             FontFamily="Consolas" />
+                </StackPanel>
+
+                <TextBlock Text="Temperature (0.0 = most literal, 1.0 = creative)" Style="{StaticResource Label}" />
+                <TextBox Text="{Binding LlmTemperature, UpdateSourceTrigger=PropertyChanged}" />
+
+                <TextBlock Text="System prompt (use {source} and {target} placeholders)" Style="{StaticResource Label}" />
+                <TextBox Text="{Binding LlmSystemPrompt, UpdateSourceTrigger=PropertyChanged}"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         Height="100"
+                         VerticalScrollBarVisibility="Auto" />
+
+                <Button Content="Test LLM translator"
+                        Command="{Binding TestLlmCommand}"
+                        HorizontalAlignment="Left" />
+            </StackPanel>
 
             <Separator Margin="0,12" />
 
@@ -96,8 +155,20 @@
 
             <CheckBox Content="Skip player names (use regex below)"
                       IsChecked="{Binding SkipPlayerNames}" />
-            <CheckBox Content="Only translate lines matching the regex (drops voice lines, hero changes, killfeed, etc.)"
-                      IsChecked="{Binding OnlyTranslateMatchingLines}" />
+
+            <TextBlock Text="Do not translate when line contains (one phrase per line, case-insensitive)"
+                       Style="{StaticResource Label}" />
+            <TextBox Text="{Binding BlockedPhrasesText, UpdateSourceTrigger=PropertyChanged}"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     Height="90"
+                     VerticalScrollBarVisibility="Auto"
+                     FontFamily="Consolas" />
+            <TextBlock Style="{StaticResource Label}"
+                       FontSize="11"
+                       Foreground="#FFAAAAAA"
+                       TextWrapping="Wrap"
+                       Text="Example (Overwatch): type words like ELIMINATED, VOICE LINE, changed hero to, joined channel — any chat line whose OCR text contains one of these (case-insensitive) is dropped before translation." />
 
             <TextBlock Text="Chat line regex (groups: name, text)" Style="{StaticResource Label}" />
             <TextBox Text="{Binding ChatLineRegex, UpdateSourceTrigger=PropertyChanged}"
